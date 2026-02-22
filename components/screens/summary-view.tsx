@@ -13,6 +13,7 @@ import {
   getMonthlyIncomesByKeys,
   type MonthSummary,
 } from "@/services/billingService"
+import type { Bill } from "@/types/bill"
 
 function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("es-AR", {
@@ -51,9 +52,9 @@ export function SummaryView({
           ? getMonthlyIncomesByKeys(userEmail, keys).then((incomeByKey) => ({ grouped, incomeByKey }))
           : Promise.resolve({ grouped, incomeByKey: {} as Record<string, number> })
       })
-      .then(({ grouped, incomeByKey }) => {
-        if (cancelled) return
-        setSummaries(getMonthlySummaries(grouped, incomeByKey))
+      .then((result: { grouped: Record<string, Bill[]>; incomeByKey: Record<string, number> } | undefined) => {
+        if (cancelled || result == null) return
+        setSummaries(getMonthlySummaries(result.grouped, result.incomeByKey))
       })
       .catch((err) => {
         if (!cancelled) console.error(err)

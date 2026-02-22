@@ -43,6 +43,10 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
+### npm deprecation warnings
+
+When you run `npm install` you may see warnings about `node-domexception` and `glob`. They come from transitive dependencies of **googleapis** (Gmail sync). The project pins a newer `glob` via `overrides` to reduce the security warning; the `node-domexception` warning is harmless and will go away when upstream (fetch-blob) switches to the native `DOMException` in Node 18+. You can ignore both for local development.
+
 ## Deploy (Vercel)
 
 - Push to GitHub, connect the repo in Vercel, deploy.
