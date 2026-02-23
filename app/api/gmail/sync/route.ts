@@ -1,11 +1,6 @@
 import { NextResponse } from "next/server"
 import { google } from "googleapis"
-import { createClient } from "@supabase/supabase-js"
-
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+import { supabaseAdmin } from "@/lib/supabaseAdmin"
 
 const DEFAULT_AMOUNT_REGEX = /\$\s*([\d.,]+)/
 const DEFAULT_DATE_REGEX = /\b(\d{2}\/\d{2}\/\d{4})\b/
@@ -133,7 +128,7 @@ function parseDueDate(body: string, dateRegex: string | null): string | null {
 
 export async function GET() {
   try {
-    const { data: accounts, error: accountsError } = await supabase
+    const { data: accounts, error: accountsError } = await supabaseAdmin
       .from("gmail_accounts")
       .select("*")
       .limit(1)
@@ -145,7 +140,7 @@ export async function GET() {
       )
     }
 
-    const { data: services, error: servicesError } = await supabase
+    const { data: services, error: servicesError } = await supabaseAdmin
       .from("email_services")
       .select("id, name, from_email, user_name_filter, amount_regex, date_regex, body_include_any, active")
       .eq("active", true)
@@ -179,7 +174,7 @@ export async function GET() {
 
     auth.on("tokens", async (tokens) => {
       if (tokens.access_token) {
-        await supabase
+        await supabaseAdmin
           .from("gmail_accounts")
           .update({
             access_token: tokens.access_token,
@@ -242,7 +237,7 @@ export async function GET() {
         }
 
         // No pisar status (paid) al sincronizar: si la fila existe, solo actualizar monto/datos; si no, insertar con pending
-        const { data: existing } = await supabase
+        const { data: existing } = await supabaseAdmin
           .from("bills")
           .select("id, status")
           .eq("user_email", account.user_email)
@@ -251,7 +246,7 @@ export async function GET() {
           .maybeSingle()
 
         if (existing) {
-          const { error } = await supabase
+          const { error } = await supabaseAdmin
             .from("bills")
             .update({
               amount,
@@ -267,7 +262,7 @@ export async function GET() {
             totalProcessed++
           }
         } else {
-          const { error } = await supabase.from("bills").insert({
+          const { error } = await supabaseAdmin.from("bills").insert({
             user_email: account.user_email,
             service: service.name,
             amount,
