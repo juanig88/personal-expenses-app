@@ -1,6 +1,28 @@
 import { NextResponse } from "next/server"
+import { writeFile } from "fs/promises"
+import { join } from "path"
 import { google } from "googleapis"
 import { supabaseAdmin } from "@/lib/supabaseAdmin"
+
+/** Una entrada por cada mensaje procesado (o descartado) para debug. */
+interface SyncDebugEntry {
+  serviceName: string
+  messageId: string
+  subject: string
+  dateHeader: string
+  body: string
+  result: "skipped" | "saved"
+  skipReason?:
+    | "no_body"
+    | "user_name_filter"
+    | "body_include_any"
+    | "amount_regex"
+    | "due_date"
+  amountPesos?: number | null
+  amountDollars?: number | null
+  amount?: number
+  dueDate?: string | null
+}
 
 const DEFAULT_AMOUNT_REGEX = /\$\s*([\d.,]+)/
 const DEFAULT_DATE_REGEX = /\b(\d{2}\/\d{2}\/\d{4})\b/
@@ -11,6 +33,7 @@ interface EmailService {
   from_email: string
   user_name_filter: string | null
   amount_regex: string | null
+  amount_dollar_regex: string | null
   date_regex: string | null
   body_include_any: string | null
   active: boolean
@@ -19,10 +42,9 @@ interface EmailService {
 /** Separator for multiple regexes in DB. Ej: "(\d{2}/\d{2}/\d{2})||(\d{2}-\d{2}-\d{2})" */
 const REGEX_ALTERNATIVES_SEP = "||"
 
-/** RegExps from DB: escape backslashes so \d \b etc. work in JS RegExp. */
+/** RegExps from DB: use pattern as-is; the DB stores \d \s etc. with one backslash, and new RegExp() interprets them. */
 function regexFromDb(pattern: string): RegExp {
-  const escaped = pattern.replace(/\\/g, "\\\\")
-  return new RegExp(escaped)
+  return new RegExp(pattern)
 }
 
 /** Split DB regex field into individual patterns (trimmed, non-empty). */
@@ -45,7 +67,63 @@ function decodeBase64(data: string): string | null {
 
 /** Strip HTML tags to get plain text for regex matching. */
 function stripHtml(html: string): string {
-  return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ")
+  // Quitar <style> y <script> primero; si no, el texto queda solo con CSS/JS (ej. resúmenes Banco Galicia).
+  let out = html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
+  out = out.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ")
+  return out
+}
+
+/** Quita tildes para comparación (GARCIA matchea García). */
+function normalizeAccents(s: string): string {
+  return s.normalize("NFD").replace(/\p{Diacritic}/gu, "")
+}
+
+/** Decodifica entidades HTML (&#243;, &#xF3;, &oacute;) para que regex con "dólares" matchee. */
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code, 10)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCharCode(parseInt(code, 16)))
+    .replace(/&oacute;/gi, "ó")
+    .replace(/&eacute;/gi, "é")
+    .replace(/&iacute;/gi, "í")
+    .replace(/&uacute;/gi, "ú")
+    .replace(/&ntilde;/gi, "ñ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+}
+
+/** Normaliza texto para que regex de montos/fechas coincidan (viñetas, espacios). */
+function normalizeSearchableText(text: string): string {
+  const decoded = decodeHtmlEntities(text)
+  return decoded
+    .replace(/\u2022/g, " ")
+    .replace(/\u00A0/g, " ")
+    .replace(/&#x2022;|&#8226;|&bull;/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
+function collectParts(
+  acc: string[],
+  payload: { body?: { data?: string | null }; parts?: Array<{ body?: { data?: string | null }; parts?: unknown[] }> } | null
+): void {
+  if (!payload) return
+  if (payload.body?.data) {
+    const decoded = decodeBase64(payload.body.data)
+    if (decoded) acc.push(decoded.startsWith("<") ? stripHtml(decoded) : decoded)
+  }
+  if (payload.parts) {
+    for (const part of payload.parts) {
+      if (part.body?.data) {
+        const decoded = decodeBase64(part.body.data)
+        if (decoded) acc.push(decoded.startsWith("<") ? stripHtml(decoded) : decoded)
+      }
+      if (part.parts) collectParts(acc, part as typeof payload)
+    }
+  }
 }
 
 /** Get all searchable text from the message (snippet + decoded body). */
@@ -55,20 +133,35 @@ function getMessageBody(
 ): string {
   const parts: string[] = []
   if (snippet) parts.push(snippet)
-  const p = payload as { body?: { data?: string | null }; parts?: Array<{ mimeType?: string | null; body?: { data?: string | null } }> } | null
-  if (p?.body?.data) {
-    const decoded = decodeBase64(p.body.data)
-    if (decoded) parts.push(decoded.startsWith("<") ? stripHtml(decoded) : decoded)
-  }
-  if (p?.parts) {
-    for (const part of p.parts) {
-      if (part.body?.data) {
-        const decoded = decodeBase64(part.body.data)
-        if (decoded) parts.push(decoded.startsWith("<") ? stripHtml(decoded) : decoded)
-      }
-    }
-  }
+  collectParts(parts, payload as Parameters<typeof collectParts>[1])
   return parts.join(" ")
+}
+
+/**
+ * Normaliza monto en formato AR (1.553.913,69 o 23.006,66) o US (66757.73 o 5,43).
+ * AR: punto miles, coma decimal. US: coma miles, punto decimal (o solo punto decimal).
+ */
+function parseAmountFromRaw(raw: string): number | null {
+  const s = raw.trim().replace(/\s/g, "")
+  if (!s) return null
+  const lastComma = s.lastIndexOf(",")
+  const lastDot = s.lastIndexOf(".")
+  const hasCommaDecimal =
+    lastComma !== -1 &&
+    /^\d{1,3}$/.test(s.slice(lastComma + 1))
+  const hasDotDecimal =
+    lastDot !== -1 &&
+    /^\d{1,2}$/.test(s.slice(lastDot + 1))
+  let normalized: string
+  if (hasCommaDecimal && !hasDotDecimal) {
+    normalized = s.replace(/\./g, "").replace(",", ".")
+  } else if (hasDotDecimal) {
+    normalized = s.replace(/,/g, "")
+  } else {
+    normalized = s.replace(/\./g, "").replace(",", ".")
+  }
+  const n = parseFloat(normalized)
+  return Number.isNaN(n) ? null : n
 }
 
 function parseAmount(body: string, amountRegex: string | null): number | null {
@@ -76,18 +169,15 @@ function parseAmount(body: string, amountRegex: string | null): number | null {
   if (patterns.length === 0) {
     const match = body.match(DEFAULT_AMOUNT_REGEX)
     if (!match?.[1]) return null
-    const raw = match[1].replace(/\./g, "").replace(",", ".").replace(/,$/, "")
-    const n = parseFloat(raw)
-    return Number.isNaN(n) ? null : n
+    return parseAmountFromRaw(match[1])
   }
   for (const pattern of patterns) {
     try {
       const re = regexFromDb(pattern)
       const match = body.match(re)
       if (match?.[1]) {
-        const raw = match[1].replace(/\./g, "").replace(",", ".").replace(/,$/, "")
-        const n = parseFloat(raw)
-        if (!Number.isNaN(n)) return n
+        const n = parseAmountFromRaw(match[1])
+        if (n != null) return n
       }
     } catch {
       // invalid pattern, try next
@@ -96,10 +186,82 @@ function parseAmount(body: string, amountRegex: string | null): number | null {
   return null
 }
 
+/** Igual que parseAmount pero para la columna amount_dollar_regex (monto en USD). */
+function parseAmountDollar(
+  body: string,
+  amountDollarRegex: string | null
+): number | null {
+  if (!amountDollarRegex?.trim()) return null
+  const patterns = splitRegexAlternatives(amountDollarRegex)
+  for (const pattern of patterns) {
+    try {
+      const re = regexFromDb(pattern)
+      const match = body.match(re)
+      if (match?.[1]) {
+        const n = parseAmountFromRaw(match[1])
+        if (n != null) return n
+      }
+    } catch {
+      // invalid pattern, try next
+    }
+  }
+  return null
+}
+
+const DOLAR_OFICIAL_URL = "https://dolarapi.com/v1/dolares/oficial"
+
+/** Obtiene la cotización venta del dólar oficial (ARS por 1 USD). */
+async function getDolarOficialVenta(): Promise<number> {
+  const res = await fetch(DOLAR_OFICIAL_URL)
+  if (!res.ok) throw new Error(`Dolar API error: ${res.status}`)
+  const data = (await res.json()) as { venta?: number }
+  const venta = data?.venta
+  if (typeof venta !== "number" || venta <= 0) {
+    throw new Error("Dolar API: venta inválida")
+  }
+  return venta
+}
+
 /** DD/MM/YY or DD/MM/YYYY - fallback si ningún regex de la DB matchea. */
 const FALLBACK_DATE_REGEX = /(\d{1,2}\/\d{1,2}\/\d{2,4})/
 
+/** Visa Galicia: "02 Mar 26" o "02 Mar 2026" */
+const SHORT_DATE_REGEX = /(\d{1,2})\s+([A-Za-z]{3})\s+(\d{2,4})/
+
+const SHORT_MONTHS: Record<string, number> = {
+  jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
+  jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+  // Español (Galicia: "05 Ene 26")
+  ene: 1, abr: 4, ago: 8, dic: 12,
+}
+
+/** Patrón "entre el X y el Y de febrero" → due_date = primer día del mes + año del mail. */
+const RANGO_MES_REGEX = /entre el \d{1,2} y el \d{1,2} de ([a-zA-Záéíóúñ]+)/i
+
+const SPANISH_MONTHS: Record<string, number> = {
+  enero: 1,
+  febrero: 2,
+  marzo: 3,
+  abril: 4,
+  mayo: 5,
+  junio: 6,
+  julio: 7,
+  agosto: 8,
+  septiembre: 9,
+  octubre: 10,
+  noviembre: 11,
+  diciembre: 12,
+}
+
 function normalizeCapturedDate(captured: string): string | null {
+  const shortMatch = captured.match(SHORT_DATE_REGEX)
+  if (shortMatch) {
+    const [, day, monthStr, yearStr] = shortMatch
+    const monthNum = SHORT_MONTHS[monthStr?.toLowerCase().slice(0, 3) ?? ""]
+    if (monthNum == null) return null
+    const fullYear = (yearStr?.length ?? 0) === 2 ? `20${yearStr}` : yearStr
+    return `${fullYear}-${String(monthNum).padStart(2, "0")}-${day?.padStart(2, "0")}`
+  }
   const parts = captured.split(/\D/).filter(Boolean)
   if (parts.length !== 3) return null
   const [day, month, year] = parts
@@ -107,14 +269,39 @@ function normalizeCapturedDate(captured: string): string | null {
   return `${fullYear}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`
 }
 
-function parseDueDate(body: string, dateRegex: string | null): string | null {
+/**
+ * Si el texto capturado es "entre el 1 y el 10 de febrero", devuelve due_date
+ * como primer día del mes + mes extraído + año del mail (YYYY-MM-DD).
+ */
+function dueDateFromMonthRange(
+  captured: string,
+  emailSentDate: Date | null
+): string | null {
+  const rangeMatch = captured.match(RANGO_MES_REGEX)
+  if (!rangeMatch?.[1]) return null
+  const monthName = rangeMatch[1].toLowerCase().trim()
+  const monthNum = SPANISH_MONTHS[monthName]
+  if (monthNum == null) return null
+  const year = emailSentDate ? emailSentDate.getFullYear() : new Date().getFullYear()
+  const month = String(monthNum).padStart(2, "0")
+  return `${year}-${month}-01`
+}
+
+function parseDueDate(
+  body: string,
+  dateRegex: string | null,
+  emailSentDate?: Date | null
+): string | null {
   const patterns = splitRegexAlternatives(dateRegex)
   for (const pattern of patterns) {
     try {
       const re = regexFromDb(pattern)
       const match = body.match(re)
       if (match?.[1]) {
-        const normalized = normalizeCapturedDate(match[1])
+        const captured = match[1]
+        const fromRange = dueDateFromMonthRange(captured, emailSentDate ?? null)
+        if (fromRange) return fromRange
+        const normalized = normalizeCapturedDate(captured)
         if (normalized) return normalized
       }
     } catch {
@@ -142,7 +329,7 @@ export async function GET() {
 
     const { data: services, error: servicesError } = await supabaseAdmin
       .from("email_services")
-      .select("id, name, from_email, user_name_filter, amount_regex, date_regex, body_include_any, active")
+      .select("id, name, from_email, user_name_filter, amount_regex, amount_dollar_regex, date_regex, body_include_any, active")
       .eq("active", true)
 
     if (servicesError) {
@@ -187,12 +374,15 @@ export async function GET() {
     const gmail = google.gmail({ version: "v1", auth })
 
     let totalProcessed = 0
+    const syncDebugLog: SyncDebugEntry[] = []
 
     for (const service of services as EmailService[]) {
+      let dolarVentaCache: number | null = null
+
       const res = await gmail.users.messages.list({
         userId: "me",
         q: `from:${service.from_email}`,
-        maxResults: 10,
+        maxResults: 50,
       })
 
       const messages = res.data.messages ?? []
@@ -204,37 +394,114 @@ export async function GET() {
           format: "full",
         })
 
+        const headers = msgData.data.payload?.headers ?? []
+        const subject =
+          (headers.find((h) => h.name === "Subject")?.value as string) ?? ""
+        const dateHeader =
+          (headers.find((h) => h.name === "Date")?.value as string) ?? ""
+
         const body = getMessageBody(msgData.data.snippet, msgData.data.payload ?? null)
+        const searchableText = [subject, body ?? ""].join(" ").trim()
 
-        if (!body) continue
+        const baseEntry: Omit<SyncDebugEntry, "result" | "skipReason"> = {
+          serviceName: service.name,
+          messageId: msg.id!,
+          subject,
+          dateHeader,
+          body: body ?? "",
+        }
 
-        if (
-          service.user_name_filter &&
-          !body.toLowerCase().includes(service.user_name_filter.toLowerCase())
-        ) {
+        if (!body && !subject) {
+          syncDebugLog.push({
+            ...baseEntry,
+            result: "skipped",
+            skipReason: "no_body",
+          })
           continue
         }
 
-        if (service.body_include_any?.trim()) {
-          const terms = service.body_include_any.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean)
-          const bodyLower = body.toLowerCase()
-          if (terms.length > 0 && !terms.some((term) => bodyLower.includes(term))) {
+        if (service.user_name_filter) {
+          const textNorm = normalizeAccents(searchableText.toLowerCase())
+          const filterNorm = normalizeAccents(service.user_name_filter.toLowerCase())
+          if (!textNorm.includes(filterNorm)) {
+            syncDebugLog.push({
+              ...baseEntry,
+              result: "skipped",
+              skipReason: "user_name_filter",
+            })
             continue
           }
         }
 
-        const amount = parseAmount(body, service.amount_regex)
-        if (amount == null) continue
-
-        const dueDate = parseDueDate(body, service.date_regex)
-        if (!dueDate) continue
-
-        const headers = msgData.data.payload?.headers ?? []
-        const dateHeader = headers.find((h) => h.name === "Date")
-        let sentDate: Date | null = null
-        if (dateHeader?.value) {
-          sentDate = new Date(dateHeader.value)
+        if (service.body_include_any?.trim()) {
+          const terms = service.body_include_any.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean)
+          const textLower = searchableText.toLowerCase()
+          if (terms.length > 0 && !terms.some((term) => textLower.includes(term))) {
+            syncDebugLog.push({
+              ...baseEntry,
+              result: "skipped",
+              skipReason: "body_include_any",
+            })
+            continue
+          }
         }
+
+        const normalizedText = normalizeSearchableText(searchableText)
+        const amountPesos = parseAmount(normalizedText, service.amount_regex)
+        if (amountPesos == null) {
+          syncDebugLog.push({
+            ...baseEntry,
+            result: "skipped",
+            skipReason: "amount_regex",
+            amountPesos: null,
+          })
+          continue
+        }
+
+        let amount: number
+        let amountDollars: number | null = null
+        // Solo entramos acá si el servicio tiene amount_dollar_regex (ej. Visa/Mastercard Galicia).
+        if (service.amount_dollar_regex?.trim()) {
+          amountDollars = parseAmountDollar(normalizedText, service.amount_dollar_regex)
+          if (amountDollars != null && amountDollars > 0) {
+            if (dolarVentaCache === null) {
+              dolarVentaCache = await getDolarOficialVenta()
+            }
+            amount = Math.round((amountPesos + amountDollars * dolarVentaCache) * 100) / 100
+          } else {
+            amount = amountPesos
+          }
+        } else {
+          amount = amountPesos
+        }
+
+        let sentDate: Date | null = null
+        if (dateHeader) {
+          sentDate = new Date(dateHeader)
+        }
+
+        const dueDate = parseDueDate(normalizedText, service.date_regex, sentDate)
+        if (!dueDate) {
+          syncDebugLog.push({
+            ...baseEntry,
+            result: "skipped",
+            skipReason: "due_date",
+            amountPesos,
+            amountDollars,
+            amount,
+            dueDate: null,
+          })
+          continue
+        }
+
+        syncDebugLog.push({
+          ...baseEntry,
+          result: "saved",
+          amountPesos,
+          amountDollars,
+          amount,
+          dueDate,
+        })
 
         // No pisar status (paid) al sincronizar: si la fila existe, solo actualizar monto/datos; si no, insertar con pending
         const { data: existing } = await supabaseAdmin
@@ -282,10 +549,22 @@ export async function GET() {
       }
     }
 
+    const debugPath = join(
+      process.cwd(),
+      `sync-debug-${new Date().toISOString().replace(/[:.]/g, "-")}.json`
+    )
+    await writeFile(
+      debugPath,
+      JSON.stringify(syncDebugLog, null, 2),
+      "utf-8"
+    )
+    console.log("[gmail/sync] Debug log written to", debugPath)
+
     return NextResponse.json({
       success: true,
       servicesProcessed: services.length,
       totalProcessed,
+      debugFile: debugPath,
     })
   } catch (err) {
     console.error("[gmail/sync]", err)

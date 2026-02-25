@@ -29,6 +29,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+sync-debug-*.json
 
 # env files — nunca subir secretos al repo
 .env
