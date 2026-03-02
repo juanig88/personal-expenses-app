@@ -561,22 +561,26 @@ export async function GET() {
       }
     }
 
-    const debugPath = join(
-      process.cwd(),
-      `sync-debug-${new Date().toISOString().replace(/[:.]/g, "-")}.json`
-    )
-    await writeFile(
-      debugPath,
-      JSON.stringify(syncDebugLog, null, 2),
-      "utf-8"
-    )
-    console.log("[gmail/sync] Debug log written to", debugPath)
+    let debugFile: string | null = null
+    if (process.env.NODE_ENV === "development") {
+      const debugPath = join(
+        process.cwd(),
+        `sync-debug-${new Date().toISOString().replace(/[:.]/g, "-")}.json`
+      )
+      await writeFile(
+        debugPath,
+        JSON.stringify(syncDebugLog, null, 2),
+        "utf-8"
+      )
+      console.log("[gmail/sync] Debug log written to", debugPath)
+      debugFile = debugPath
+    }
 
     return NextResponse.json({
       success: true,
       servicesProcessed: services.length,
       totalProcessed,
-      debugFile: debugPath,
+      ...(debugFile != null && { debugFile }),
     })
   } catch (err) {
     console.error("[gmail/sync]", err)
