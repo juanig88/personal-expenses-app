@@ -27,6 +27,68 @@ export async function getBillsByMonth(
   return (data ?? []).map((row) => dbBillToBill(row as BillRow))
 }
 
+/** Normalize service name for duplicate check (trim + lowercase). */
+function normalizeServiceKey(service: string): string {
+  return service.trim().toLowerCase()
+}
+
+/**
+ * Due date in current year/month, same day as refDate (YYYY-MM-DD); if day is beyond month end, use last day.
+ */
+function dueDateInMonth(year: number, month: number, refDate: string): string {
+  const [, , dayStr] = refDate.split("-")
+  const day = Math.min(parseInt(dayStr, 10) || 1, 31)
+  const lastDay = new Date(year, month, 0).getDate()
+  const d = Math.min(day, lastDay)
+  return `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`
+}
+
+export interface CopyPreviousMonthResult {
+  created: number
+  skipped: number
+}
+
+/**
+ * Copy bills from the previous month into the current month. Creates only concepts
+ * that don't already exist in the current month (by service name, case-insensitive).
+ */
+export async function copyPreviousMonthBills(
+  userEmail: string,
+  currentYear: number,
+  currentMonth: number
+): Promise<CopyPreviousMonthResult> {
+  const prevMonth = currentMonth === 1 ? 12 : currentMonth - 1
+  const prevYear = currentMonth === 1 ? currentYear - 1 : currentYear
+
+  const [prevBills, currentBills] = await Promise.all([
+    getBillsByMonth(userEmail, prevYear, prevMonth),
+    getBillsByMonth(userEmail, currentYear, currentMonth),
+  ])
+
+  const currentServices = new Set(currentBills.map((b) => normalizeServiceKey(b.serviceName)))
+  let created = 0
+  let skipped = 0
+
+  for (const bill of prevBills) {
+    const key = normalizeServiceKey(bill.serviceName)
+    if (currentServices.has(key)) {
+      skipped += 1
+      continue
+    }
+    const dueDate = dueDateInMonth(currentYear, currentMonth, bill.dueDate)
+    await createBill(userEmail, {
+      service: bill.serviceName,
+      amount: bill.amount,
+      due_date: dueDate,
+      currency: bill.currency ?? "ARS",
+    })
+    created += 1
+    currentServices.add(key)
+  }
+
+  return { created, skipped }
+}
+
 /**
  * Fetch all bills for the user (for summary view).
  */

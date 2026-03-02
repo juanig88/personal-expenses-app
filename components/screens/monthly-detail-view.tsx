@@ -14,10 +14,11 @@ import {
   Clock,
   Plus,
   Pencil,
+  Copy,
 } from "lucide-react"
 import { useTheme } from "next-themes"
 import { UserMenu } from "@/components/user-menu"
-import { getBillsByMonth, createBill, getMonthlyIncome, setMonthlyIncome } from "@/services/billingService"
+import { getBillsByMonth, createBill, getMonthlyIncome, setMonthlyIncome, copyPreviousMonthBills } from "@/services/billingService"
 import { formatLocaleDate } from "@/lib/date"
 
 const MONTH_NAMES = [
@@ -67,6 +68,8 @@ export function MonthlyDetailView({
   const [addAmount, setAddAmount] = useState("")
   const [addSaving, setAddSaving] = useState(false)
   const [addError, setAddError] = useState<string | null>(null)
+  const [copyLoading, setCopyLoading] = useState(false)
+  const [copyMessage, setCopyMessage] = useState<string | null>(null)
   const { theme, setTheme } = useTheme()
 
   const refetch = useCallback(() => {
@@ -141,6 +144,7 @@ export function MonthlyDetailView({
   const toggleTheme = () => setTheme(theme === "dark" ? "light" : "dark")
 
   const goToPreviousMonth = () => {
+    setCopyMessage(null)
     if (currentMonth === 1) {
       setCurrentMonth(12)
       setCurrentYear(currentYear - 1)
@@ -150,6 +154,7 @@ export function MonthlyDetailView({
   }
 
   const goToNextMonth = () => {
+    setCopyMessage(null)
     if (currentMonth === 12) {
       setCurrentMonth(1)
       setCurrentYear(currentYear + 1)
@@ -197,6 +202,28 @@ export function MonthlyDetailView({
       setAddError(err instanceof Error ? err.message : "Error al guardar.")
     } finally {
       setAddSaving(false)
+    }
+  }
+
+  const handleCopyPreviousMonth = async () => {
+    setCopyMessage(null)
+    setCopyLoading(true)
+    try {
+      const { created, skipped } = await copyPreviousMonthBills(userEmail, currentYear, currentMonth)
+      await refetch()
+      if (created === 0 && skipped === 0) {
+        setCopyMessage("El mes anterior no tenía gastos.")
+      } else if (created === 0) {
+        setCopyMessage(`Todos los conceptos (${skipped}) ya existen este mes.`)
+      } else {
+        const parts = [`Se agregaron ${created} concepto${created === 1 ? "" : "s"}.`]
+        if (skipped > 0) parts.push(`${skipped} ya existían.`)
+        setCopyMessage(parts.join(" "))
+      }
+    } catch (err) {
+      setCopyMessage(err instanceof Error ? err.message : "Error al copiar.")
+    } finally {
+      setCopyLoading(false)
     }
   }
 
@@ -297,18 +324,33 @@ export function MonthlyDetailView({
         </section>
 
         <section className="mb-6 flex-1">
-          <div className="mb-3 flex items-center justify-between">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-medium text-muted-foreground">Gastos del mes</h2>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 gap-1.5 rounded-lg px-2 text-xs text-muted-foreground"
-              onClick={openAddModal}
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Agregar
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 gap-1.5 rounded-lg px-2 text-xs text-muted-foreground"
+                onClick={handleCopyPreviousMonth}
+                disabled={copyLoading}
+              >
+                <Copy className="h-3.5 w-3.5" />
+                Copiar mes anterior
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 gap-1.5 rounded-lg px-2 text-xs text-muted-foreground"
+                onClick={openAddModal}
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Agregar
+              </Button>
+            </div>
           </div>
+          {copyMessage && (
+            <p className="mb-2 text-xs text-muted-foreground">{copyMessage}</p>
+          )}
 
           <div className="overflow-hidden rounded-2xl border border-border bg-card">
             <div className="grid grid-cols-[1fr_auto_auto_auto] gap-2 border-b border-border bg-muted/50 px-4 py-2.5 text-xs font-medium text-muted-foreground">
