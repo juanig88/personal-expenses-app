@@ -327,15 +327,15 @@ export function MonthlyDetailView({
                   <button
                     key={bill.id}
                     type="button"
-                    className="grid w-full grid-cols-[1fr_auto_auto_auto] gap-2 px-4 py-3.5 text-left transition-colors hover:bg-muted/30 active:bg-muted/50"
+                    className="grid w-full grid-cols-[1fr_auto_auto_auto] gap-2 px-4 py-3.5 text-left transition-colors hover:bg-muted/30 active:bg-muted/50 items-center"
                     onClick={() => onSelectBill(bill)}
                   >
-                    <span className="truncate text-sm font-medium text-card-foreground">{bill.serviceName}</span>
-                    <span className="w-20 text-center text-sm text-muted-foreground tabular-nums">{formatLocaleDate(bill.dueDate)}</span>
-                    <span className="w-24 text-right text-sm font-medium tabular-nums text-card-foreground">
+                    <span className="min-w-0 line-clamp-2 wrap-break-word text-sm font-medium text-card-foreground">{bill.serviceName}</span>
+                    <span className="w-20 shrink-0 text-center text-sm text-muted-foreground tabular-nums">{formatLocaleDate(bill.dueDate)}</span>
+                    <span className="w-24 shrink-0 text-right text-sm font-medium tabular-nums text-card-foreground">
                       ${formatCurrency(bill.amount)}
                     </span>
-                    <span className="flex w-10 items-center justify-center">
+                    <span className="flex w-10 shrink-0 items-center justify-center">
                       {bill.status === "paid" ? (
                         <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-950">
                           <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
