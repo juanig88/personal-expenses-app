@@ -76,12 +76,15 @@ const handler = NextAuth({
       }
 
       if (account?.access_token && account?.refresh_token && user.email) {
-        const { error: gmailError } = await supabase.from("gmail_accounts").upsert({
-          user_email: user.email,
-          access_token: account.access_token,
-          refresh_token: account.refresh_token,
-          expiry_date: account.expires_at ? account.expires_at * 1000 : null,
-        })
+        const { error: gmailError } = await supabase.from("gmail_accounts").upsert(
+          {
+            user_email: user.email,
+            access_token: account.access_token,
+            refresh_token: account.refresh_token,
+            expiry_date: account.expires_at ? account.expires_at * 1000 : null,
+          },
+          { onConflict: "user_email" }
+        )
 
         if (gmailError) {
           console.error(

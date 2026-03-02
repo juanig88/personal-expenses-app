@@ -95,6 +95,17 @@ function decodeHtmlEntities(text: string): string {
     .replace(/&gt;/g, ">")
 }
 
+/** Returns true if the error is Google OAuth invalid_grant (expired/revoked refresh token). */
+function isInvalidGrantError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err)
+  if (msg.includes("invalid_grant")) return true
+  const cause = err && typeof err === "object" && "cause" in err ? (err as { cause?: unknown }).cause : null
+  if (cause instanceof Error && cause.message?.includes("invalid_grant")) return true
+  const res = cause && typeof cause === "object" && "response" in cause ? (cause as { response?: { data?: { error?: string } } }).response : null
+  if (res?.data?.error === "invalid_grant") return true
+  return false
+}
+
 /** Normaliza texto para que regex de montos/fechas coincidan (viñetas, espacios). */
 function normalizeSearchableText(text: string): string {
   const decoded = decodeHtmlEntities(text)
@@ -318,6 +329,7 @@ export async function GET() {
     const { data: accounts, error: accountsError } = await supabaseAdmin
       .from("gmail_accounts")
       .select("*")
+      .order("created_at", { ascending: false })
       .limit(1)
 
     if (accountsError || !accounts?.length) {
@@ -568,6 +580,16 @@ export async function GET() {
     })
   } catch (err) {
     console.error("[gmail/sync]", err)
+    if (isInvalidGrantError(err)) {
+      return NextResponse.json(
+        {
+          error: "gmail_reauth_required",
+          message:
+            "Gmail access has expired or was revoked. Please sign out and sign in again to re-authorize.",
+        },
+        { status: 401 }
+      )
+    }
     return NextResponse.json({ error: "Sync failed" }, { status: 500 })
   }
 }
