@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/due-reminders",
+      "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/gmail/sync",
+      "schedule": "0 11 * * *"
+    }
+  ]
+}
