@@ -67,6 +67,8 @@ export function BillDetailScreen({ bill, onBack, onBillUpdated }: BillDetailScre
   const [currentBill, setCurrentBill] = useState(bill)
   const [isEditing, setIsEditing] = useState(false)
   const [editAmount, setEditAmount] = useState(bill.amount.toString())
+  const [isEditingDueDate, setIsEditingDueDate] = useState(false)
+  const [editDueDate, setEditDueDate] = useState(bill.dueDate)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
@@ -111,6 +113,29 @@ export function BillDetailScreen({ bill, onBack, onBillUpdated }: BillDetailScre
   const handleCancelEdit = () => {
     setEditAmount(currentBill.amount.toString())
     setIsEditing(false)
+  }
+
+  const handleSaveDueDate = async () => {
+    if (!editDueDate || editDueDate.length < 10) {
+      setIsEditingDueDate(false)
+      return
+    }
+    setSaving(true)
+    try {
+      const updated = await updateBill(currentBill.id, { due_date: editDueDate })
+      setCurrentBill(updated)
+      setIsEditingDueDate(false)
+      await onBillUpdated?.()
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleCancelEditDueDate = () => {
+    setEditDueDate(currentBill.dueDate)
+    setIsEditingDueDate(false)
   }
 
   const handleDelete = async () => {
@@ -212,9 +237,39 @@ export function BillDetailScreen({ bill, onBack, onBillUpdated }: BillDetailScre
           {/* Due date */}
           <div className="flex items-center justify-between px-4 py-4">
             <span className="text-sm text-muted-foreground">Vence el</span>
-            <span className="font-medium tabular-nums text-foreground">
-              {formatLocaleDate(currentBill.dueDate)}
-            </span>
+            {isEditingDueDate ? (
+              <div className="flex items-center gap-2">
+                <Input
+                  type="date"
+                  value={editDueDate}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                    setEditDueDate(e.target.value)
+                  }
+                  className="h-8 w-36 font-medium"
+                  autoFocus
+                />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-emerald-600"
+                  onClick={handleSaveDueDate}
+                >
+                  <Save className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-muted-foreground"
+                  onClick={handleCancelEditDueDate}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            ) : (
+              <span className="font-medium tabular-nums text-foreground">
+                {formatLocaleDate(currentBill.dueDate)}
+              </span>
+            )}
           </div>
 
           {/* Status */}
@@ -259,10 +314,23 @@ export function BillDetailScreen({ bill, onBack, onBillUpdated }: BillDetailScre
               setEditAmount(currentBill.amount.toString())
               setIsEditing(true)
             }}
-            disabled={isEditing || saving || deleting}
+            disabled={isEditing || isEditingDueDate || saving || deleting}
           >
             <PenLine className="h-4 w-4" />
             Editar monto
+          </Button>
+
+          <Button
+            variant="outline"
+            className="h-12 gap-2 rounded-xl font-medium bg-transparent"
+            onClick={() => {
+              setEditDueDate(currentBill.dueDate)
+              setIsEditingDueDate(true)
+            }}
+            disabled={isEditing || isEditingDueDate || saving || deleting}
+          >
+            <PenLine className="h-4 w-4" />
+            Editar fecha de vencimiento
           </Button>
 
           <Button
