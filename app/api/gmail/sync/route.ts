@@ -42,8 +42,13 @@ interface EmailService {
 /** Separator for multiple regexes in DB. Ej: "(\d{2}/\d{2}/\d{2})||(\d{2}-\d{2}-\d{2})" */
 const REGEX_ALTERNATIVES_SEP = "||"
 
-/** RegExps from DB: use pattern as-is; the DB stores \d \s etc. with one backslash, and new RegExp() interprets them. */
+const MAX_REGEX_PATTERN_LENGTH = 500
+
+/** RegExps from DB: use pattern as-is; limit length to mitigate ReDoS. */
 function regexFromDb(pattern: string): RegExp {
+  if (pattern.length > MAX_REGEX_PATTERN_LENGTH) {
+    throw new Error("Regex pattern too long")
+  }
   return new RegExp(pattern)
 }
 

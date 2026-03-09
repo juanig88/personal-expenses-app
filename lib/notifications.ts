@@ -2,7 +2,7 @@
  * Decode base64url VAPID public key to Uint8Array for PushManager.subscribe.
  * Uses ArrayBuffer so the result is a valid BufferSource for the Push API.
  */
-function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
+export function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4)
   const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/")
   const rawData = atob(base64)
@@ -43,7 +43,7 @@ export async function subscribeToDueReminders(
   const applicationServerKey = urlBase64ToUint8Array(vapidPublicKey)
   const subscription = await registration.pushManager.subscribe({
     userVisibleOnly: true,
-    applicationServerKey,
+    applicationServerKey: applicationServerKey as BufferSource,
   })
 
   const res = await fetch("/api/notifications/subscribe", {

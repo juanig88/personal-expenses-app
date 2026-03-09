@@ -1,7 +1,10 @@
+import type { Bill } from "@/domain/bill"
+
+export type { Bill }
+
 /**
- * Bill as stored in Supabase (bills table).
- * due_date: fecha de vencimiento (cuándo pagar); usada para agrupar por mes.
- * sent_date: fecha del correo (opcional).
+ * Bill as stored in Supabase (bills table). Infrastructure persistence shape.
+ * due_date: fecha de vencimiento; sent_date: fecha del correo (opcional).
  */
 export interface BillRow {
   id: string
@@ -18,22 +21,7 @@ export interface BillRow {
 }
 
 /**
- * Bill shape used in the UI (components, navigation).
- * dueDate: fecha de vencimiento (cuándo pagar); usada para agrupar y mostrar.
- */
-export interface Bill {
-  id: string
-  serviceName: string
-  amount: number
-  currency?: string
-  dueDate: string
-  sentDate: string | null
-  status: "pending" | "paid" | "overdue"
-  type: "gas" | "electricity" | "internet" | "water" | "rent" | "other"
-}
-
-/**
- * Map a DB row to the UI Bill type.
+ * Map a DB row to the domain Bill entity. Used by infrastructure adapters.
  */
 export function dbBillToBill(row: BillRow): Bill {
   const status =

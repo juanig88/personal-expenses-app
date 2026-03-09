@@ -1,6 +1,18 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getToken } from "next-auth/jwt"
+import { z } from "zod"
 import { supabaseAdmin } from "@/lib/supabaseAdmin"
+
+const MAX_ENDPOINT_LENGTH = 2048
+const MAX_KEY_LENGTH = 512
+
+const subscribeBodySchema = z.object({
+  endpoint: z.string().url().max(MAX_ENDPOINT_LENGTH),
+  keys: z.object({
+    auth: z.string().min(1).max(MAX_KEY_LENGTH),
+    p256dh: z.string().min(1).max(MAX_KEY_LENGTH),
+  }),
+})
 
 export async function POST(req: NextRequest) {
   try {
@@ -13,15 +25,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 })
     }
 
-    const body = await req.json()
-    const { endpoint, keys } = body as { endpoint?: string; keys?: { auth: string; p256dh: string } }
-    if (!endpoint || !keys?.auth || !keys?.p256dh) {
+    const raw = await req.json()
+    const parsed = subscribeBodySchema.safeParse(raw)
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: "Falta subscription (endpoint, keys)" },
+        { error: "Falta subscription (endpoint, keys) o formato inválido" },
         { status: 400 }
       )
     }
-
+    const { endpoint, keys } = parsed.data
     const subscription = { endpoint, keys }
 
     const { error } = await supabaseAdmin.from("push_subscriptions").upsert(

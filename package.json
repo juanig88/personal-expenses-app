@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test": "vitest",
+    "test:run": "vitest run"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -70,6 +72,8 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.9",
+    "vite-tsconfig-paths": "^5.1.4",
+    "vitest": "^3.2.4",
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
