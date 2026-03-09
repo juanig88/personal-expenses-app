@@ -325,13 +325,17 @@ function parseDueDate(
 }
 
 export async function GET(request: Request) {
+  console.log("[gmail/sync] Request received")
+
   const cronSecret = process.env.CRON_SECRET
   if (cronSecret) {
     const authHeader = request.headers.get("authorization")
     if (authHeader !== `Bearer ${cronSecret}`) {
+      console.log("[gmail/sync] Unauthorized: missing or invalid Authorization (CRON_SECRET)")
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
   }
+  console.log("[gmail/sync] Auth OK, starting sync")
 
   try {
     const { data: accounts, error: accountsError } = await supabaseAdmin
@@ -341,11 +345,14 @@ export async function GET(request: Request) {
       .limit(1)
 
     if (accountsError || !accounts?.length) {
+      console.log("[gmail/sync] No Gmail account:", accountsError?.message ?? "empty list")
       return NextResponse.json(
         { error: "No Gmail account found" },
         { status: 400 }
       )
     }
+    const account = accounts[0]
+    console.log("[gmail/sync] Using account:", account.user_email)
 
     const { data: services, error: servicesError } = await supabaseAdmin
       .from("email_services")
@@ -361,13 +368,13 @@ export async function GET(request: Request) {
     }
 
     if (!services?.length) {
+      console.log("[gmail/sync] No active email_services configured")
       return NextResponse.json(
         { error: "No active email services configured. Add rows to email_services." },
         { status: 400 }
       )
     }
-
-    const account = accounts[0]
+    console.log("[gmail/sync] Active services:", (services as EmailService[]).map((s) => s.name).join(", "))
 
     const auth = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
@@ -392,12 +399,14 @@ export async function GET(request: Request) {
     })
 
     const gmail = google.gmail({ version: "v1", auth })
+    console.log("[gmail/sync] Gmail client ready")
 
     let totalProcessed = 0
     const syncDebugLog: SyncDebugEntry[] = []
 
     for (const service of services as EmailService[]) {
       let dolarVentaCache: number | null = null
+      console.log("[gmail/sync] Processing service:", service.name, "from:", service.from_email)
 
       const res = await gmail.users.messages.list({
         userId: "me",
@@ -406,6 +415,7 @@ export async function GET(request: Request) {
       })
 
       const messages = res.data.messages ?? []
+      console.log("[gmail/sync] Service", service.name, "| messages found:", messages.length)
 
       for (const msg of messages) {
         const msgData = await gmail.users.messages.get({
@@ -547,6 +557,7 @@ export async function GET(request: Request) {
             console.error("[gmail/sync] Bill update error:", error)
           } else {
             totalProcessed++
+            console.log("[gmail/sync] Updated bill:", service.name, dueDate, amount, "| id:", existing.id)
           }
         } else {
           const { error } = await supabaseAdmin.from("bills").insert({
@@ -564,9 +575,13 @@ export async function GET(request: Request) {
             console.error("[gmail/sync] Bill insert error:", error)
           } else {
             totalProcessed++
+            console.log("[gmail/sync] Inserted bill:", service.name, dueDate, amount)
           }
         }
       }
+      const skipped = syncDebugLog.filter((e) => e.serviceName === service.name && e.result === "skipped").length
+      const saved = syncDebugLog.filter((e) => e.serviceName === service.name && e.result === "saved").length
+      console.log("[gmail/sync] Service", service.name, "done | saved:", saved, "skipped:", skipped)
     }
 
     let debugFile: string | null = null
@@ -584,6 +599,8 @@ export async function GET(request: Request) {
       debugFile = debugPath
     }
 
+    console.log("[gmail/sync] Completed | totalProcessed:", totalProcessed, "| services:", (services as EmailService[]).length, "| debug entries:", syncDebugLog.length)
+
     return NextResponse.json({
       success: true,
       servicesProcessed: services.length,
@@ -591,7 +608,12 @@ export async function GET(request: Request) {
       ...(debugFile != null && { debugFile }),
     })
   } catch (err) {
-    console.error("[gmail/sync]", err)
+    console.error("[gmail/sync] Error:", err)
+    console.error("[gmail/sync] Error name:", err instanceof Error ? err.name : "unknown")
+    console.error("[gmail/sync] Error message:", err instanceof Error ? err.message : String(err))
+    if (err instanceof Error && err.cause) {
+      console.error("[gmail/sync] Error cause:", err.cause)
+    }
     if (isInvalidGrantError(err)) {
       return NextResponse.json(
         {
