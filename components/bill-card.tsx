@@ -3,6 +3,8 @@
 import { Check, Clock, AlertCircle, ChevronRight } from "lucide-react"
 import type { Bill } from "@/types/bill"
 import { formatLocaleDate } from "@/lib/date"
+import { useLocale } from "@/lib/i18n/context"
+import { formatCurrency as formatCurrencyI18n } from "@/lib/i18n/format"
 
 export type { Bill }
 
@@ -12,13 +14,6 @@ interface BillCardProps {
   compact?: boolean
 }
 
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("es-AR", {
-    style: "decimal",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(amount)
-}
 
 const statusConfig = {
   pending: {
@@ -39,6 +34,7 @@ const statusConfig = {
 }
 
 export function BillCard({ bill, onPress, compact = true }: BillCardProps) {
+  const { t, locale } = useLocale()
   const status = statusConfig[bill.status]
   const StatusIcon = status.icon
 
@@ -63,12 +59,12 @@ export function BillCard({ bill, onPress, compact = true }: BillCardProps) {
 
         {/* Due date */}
         <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-          {formatLocaleDate(bill.dueDate)}
+          {formatLocaleDate(bill.dueDate, locale)}
         </span>
 
         {/* Amount */}
         <span className="w-24 shrink-0 text-right text-sm font-semibold tabular-nums text-foreground">
-          ${formatCurrency(bill.amount)}
+          ${formatCurrencyI18n(bill.amount, locale)}
         </span>
 
         {/* Chevron */}
@@ -97,13 +93,13 @@ export function BillCard({ bill, onPress, compact = true }: BillCardProps) {
           {bill.serviceName}
         </span>
         <span className="text-xs text-muted-foreground">
-          Vence {formatLocaleDate(bill.dueDate)}
+          {t("detail.due")} {formatLocaleDate(bill.dueDate, locale)}
         </span>
       </div>
 
       {/* Amount */}
       <span className="shrink-0 text-base font-semibold tabular-nums text-foreground">
-        ${formatCurrency(bill.amount)}
+        ${formatCurrencyI18n(bill.amount, locale)}
       </span>
 
       {/* Chevron */}

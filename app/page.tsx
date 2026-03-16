@@ -6,12 +6,15 @@ import { LoginScreen } from "../components/screens/login-screen"
 import { SummaryView } from "../components/screens/summary-view"
 import { MonthlyDetailView } from "../components/screens/monthly-detail-view"
 import { BillDetailScreen } from "../components/screens/bill-detail-screen"
+import { ChartView } from "../components/screens/chart-view"
 import type { Bill } from "@/types/bill"
 import type { NavScreen } from "@/components/bottom-nav"
+import { useLocale } from "@/lib/i18n/context"
 
 type Screen = "login" | "home" | "detail"
 
 export default function Page() {
+  const { t } = useLocale()
   const { data: session, status } = useSession()
   const [currentScreen, setCurrentScreen] = useState<Screen>("login")
   const [selectedBill, setSelectedBill] = useState<Bill | null>(null)
@@ -51,7 +54,7 @@ export default function Page() {
   if (status === "loading") {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="text-muted-foreground">Cargando...</div>
+        <div className="text-muted-foreground">{t("common.loading")}</div>
       </div>
     )
   }
@@ -72,14 +75,28 @@ export default function Page() {
 
   const handleNav = (screen: NavScreen) => setView(screen)
 
-  return view === "summary" ? (
-    <SummaryView
-      userEmail={userEmail}
-      onSelectMonth={handleSelectMonth}
-      onNavigate={handleNav}
-      activeNav="summary"
-    />
-  ) : (
+  if (view === "summary") {
+    return (
+      <SummaryView
+        userEmail={userEmail}
+        onSelectMonth={handleSelectMonth}
+        onNavigate={handleNav}
+        activeNav="summary"
+      />
+    )
+  }
+
+  if (view === "chart") {
+    return (
+      <ChartView
+        userEmail={userEmail}
+        onNavigate={handleNav}
+        activeNav="chart"
+      />
+    )
+  }
+
+  return (
     <MonthlyDetailView
       year={selectedMonth.year}
       month={selectedMonth.month}

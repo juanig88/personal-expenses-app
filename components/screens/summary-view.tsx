@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { BottomNav } from "@/components/bottom-nav"
 import { UserMenu } from "@/components/user-menu"
+import { LanguageSwitcher } from "@/components/language-switcher"
 import { Button } from "@/components/ui/button"
 import { Moon, Sun } from "lucide-react"
 import { useTheme } from "next-themes"
@@ -14,20 +15,15 @@ import {
   type MonthSummary,
 } from "@/services/billingService"
 import type { Bill } from "@/types/bill"
-
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("es-AR", {
-    style: "decimal",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount)
-}
+import { useLocale } from "@/lib/i18n/context"
+import { getMonthName } from "@/lib/i18n/translations"
+import { formatCurrencyCompact } from "@/lib/i18n/format"
 
 interface SummaryViewProps {
   userEmail: string
   onSelectMonth: (year: number, month: number) => void
-  onNavigate?: (screen: "summary" | "detail") => void
-  activeNav?: "summary" | "detail"
+  onNavigate?: (screen: "summary" | "detail" | "chart") => void
+  activeNav?: "summary" | "detail" | "chart"
 }
 
 export function SummaryView({
@@ -36,6 +32,7 @@ export function SummaryView({
   onNavigate,
   activeNav = "summary",
 }: SummaryViewProps) {
+  const { t, locale } = useLocale()
   const [summaries, setSummaries] = useState<MonthSummary[]>([])
   const [loading, setLoading] = useState(true)
   const { theme, setTheme } = useTheme()
@@ -70,14 +67,15 @@ export function SummaryView({
       <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-lg">
         <div className="flex items-center justify-between px-5 pb-3 pt-safe-top">
           <div className="pt-4">
-            <p className="text-sm text-muted-foreground">Resumen por mes</p>
+            <p className="text-sm text-muted-foreground">{t("summary.title")}</p>
           </div>
           <div className="flex items-center gap-1 pt-4">
             <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
               <Sun className="h-5 w-5 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
               <Moon className="absolute h-5 w-5 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-              <span className="sr-only">Cambiar tema</span>
+              <span className="sr-only">{t("common.toggleTheme")}</span>
             </Button>
+            <LanguageSwitcher />
             <UserMenu />
           </div>
         </div>
@@ -85,44 +83,62 @@ export function SummaryView({
 
       <main className="flex flex-1 flex-col gap-4 px-5 pb-28 pt-2">
         {loading ? (
-          <div className="py-12 text-center text-sm text-muted-foreground">Cargando...</div>
+          <div className="py-12 text-center text-sm text-muted-foreground">{t("common.loading")}</div>
         ) : summaries.length === 0 ? (
-          <div className="py-12 text-center text-sm text-muted-foreground">Aún no hay facturas. Sincronizá Gmail para cargar datos.</div>
+          <div className="py-12 text-center text-sm text-muted-foreground">{t("summary.empty")}</div>
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {summaries.map((s) => (
-              <button
-                key={s.key}
-                type="button"
-                onClick={() => onSelectMonth(s.year, s.month)}
-                className="rounded-2xl border border-border bg-card p-4 text-left shadow-sm transition-all hover:border-primary/30 hover:shadow-md active:scale-[0.99]"
-              >
-                <h3 className="text-lg font-semibold text-foreground">
-                  {s.monthName} {s.year}
+            {summaries.map((s) => {
+              const pendingTotal = (s.bills ?? [])
+                .filter((b) => b.status === "pending" || b.status === "overdue")
+                .reduce((acc, b) => acc + Number(b.amount), 0)
+
+              return (
+                <button
+                  key={s.key}
+                  type="button"
+                  onClick={() => onSelectMonth(s.year, s.month)}
+                  className="rounded-2xl border border-border bg-card p-4 text-left shadow-sm transition-all hover:border-primary/30 hover:shadow-md active:scale-[0.99]"
+                >
+                <h3 className="text-lg font-semibold text-foreground font-display tracking-[-0.01em]">
+                  {getMonthName(locale, s.month)} {s.year}
                 </h3>
-                <div className="mt-3 space-y-1.5 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Gastos</span>
-                    <span className="font-medium tabular-nums text-foreground">${formatCurrency(s.totalExpenses)}</span>
+                  <div className="mt-3 space-y-1.5 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">{t("summary.expenses")}</span>
+                      <span className="font-medium tabular-nums text-foreground">
+                        ${formatCurrencyCompact(s.totalExpenses, locale)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">{t("summary.pending")}</span>
+                      <span className="font-medium tabular-nums text-foreground">
+                        ${formatCurrencyCompact(pendingTotal, locale)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">{t("summary.income")}</span>
+                      <span className="font-medium tabular-nums text-foreground">
+                        ${formatCurrencyCompact(s.monthlyIncome, locale)}
+                      </span>
+                    </div>
+                    <div className="mt-2 flex justify-between border-t border-border pt-2">
+                      <span className="text-muted-foreground">{t("summary.balance")}</span>
+                      <span
+                        className={`font-semibold tabular-nums ${
+                          s.difference >= 0
+                            ? "text-emerald-600 dark:text-emerald-400"
+                            : "text-red-600 dark:text-red-400"
+                        }`}
+                      >
+                        ${formatCurrencyCompact(Math.abs(s.difference), locale)}
+                        {s.difference < 0 ? ` ${t("summary.negative")}` : ""}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Ingreso</span>
-                    <span className="font-medium tabular-nums text-foreground">${formatCurrency(s.monthlyIncome)}</span>
-                  </div>
-                  <div className="flex justify-between border-t border-border pt-2 mt-2">
-                    <span className="text-muted-foreground">Saldo</span>
-                    <span
-                      className={`font-semibold tabular-nums ${
-                        s.difference >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"
-                      }`}
-                    >
-                      ${formatCurrency(Math.abs(s.difference))}
-                      {s.difference < 0 ? " (negativo)" : ""}
-                    </span>
-                  </div>
-                </div>
-              </button>
-            ))}
+                </button>
+              )
+            })}
           </div>
         )}
       </main>

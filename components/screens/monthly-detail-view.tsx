@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import type { Bill } from "@/types/bill"
 import { BottomNav } from "@/components/bottom-nav"
+import { LanguageSwitcher } from "@/components/language-switcher"
 import {
   ChevronLeft,
   ChevronRight,
@@ -20,27 +21,17 @@ import { useTheme } from "next-themes"
 import { UserMenu } from "@/components/user-menu"
 import { getBillsByMonth, createBill, getMonthlyIncome, setMonthlyIncome, copyPreviousMonthBills } from "@/services/billingService"
 import { formatLocaleDate } from "@/lib/date"
-
-const MONTH_NAMES = [
-  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
-]
-
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("es-AR", {
-    style: "decimal",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(amount)
-}
+import { useLocale } from "@/lib/i18n/context"
+import { getMonthName } from "@/lib/i18n/translations"
+import { formatCurrency } from "@/lib/i18n/format"
 
 interface MonthlyDetailViewProps {
   year: number
   month: number
   userEmail: string
   onSelectBill: (bill: Bill) => void
-  onNavigate?: (screen: "summary" | "detail") => void
-  activeNav?: "summary" | "detail"
+  onNavigate?: (screen: "summary" | "detail" | "chart") => void
+  activeNav?: "summary" | "detail" | "chart"
   /** Ref to register refetch so parent can refresh list when returning from bill detail */
   refetchBillsRef?: React.MutableRefObject<(() => void | Promise<void>) | null>
 }
@@ -54,6 +45,7 @@ export function MonthlyDetailView({
   activeNav = "detail",
   refetchBillsRef,
 }: MonthlyDetailViewProps) {
+  const { t, locale } = useLocale()
   const [bills, setBills] = useState<Bill[]>([])
   const [loading, setLoading] = useState(true)
   const [income, setIncome] = useState("")
@@ -123,6 +115,9 @@ export function MonthlyDetailView({
   }, [userEmail, currentYear, currentMonth])
 
   const totalExpenses = bills.reduce((acc, b) => acc + Number(b.amount), 0)
+  const totalPending = bills
+    .filter((b) => b.status === "pending" || b.status === "overdue")
+    .reduce((acc, b) => acc + Number(b.amount), 0)
   const incomeValue = Number.parseFloat(income.replace(/\./g, "").replace(",", ".")) || 0
   const balance = incomeValue - totalExpenses
 
@@ -178,15 +173,15 @@ export function MonthlyDetailView({
     setAddError(null)
     const amountNum = parseFloat(addAmount.replace(",", ".").replace(/\s/g, ""))
     if (!addConcepto.trim()) {
-      setAddError("Escribí el concepto.")
+      setAddError(t("detail.addModal.errorConcept"))
       return
     }
     if (isNaN(amountNum) || amountNum <= 0) {
-      setAddError("El importe debe ser mayor a 0.")
+      setAddError(t("detail.addModal.errorAmount"))
       return
     }
     if (!addDueDate) {
-      setAddError("Elegí la fecha de vencimiento.")
+      setAddError(t("detail.addModal.errorDue"))
       return
     }
     setAddSaving(true)
@@ -199,7 +194,7 @@ export function MonthlyDetailView({
       await refetch()
       setShowAddModal(false)
     } catch (err) {
-      setAddError(err instanceof Error ? err.message : "Error al guardar.")
+      setAddError(err instanceof Error ? err.message : t("detail.addModal.errorGeneric"))
     } finally {
       setAddSaving(false)
     }
@@ -212,16 +207,16 @@ export function MonthlyDetailView({
       const { created, skipped } = await copyPreviousMonthBills(userEmail, currentYear, currentMonth)
       await refetch()
       if (created === 0 && skipped === 0) {
-        setCopyMessage("El mes anterior no tenía gastos.")
+        setCopyMessage(t("detail.copyMessage.noExpenses"))
       } else if (created === 0) {
-        setCopyMessage(`Todos los conceptos (${skipped}) ya existen este mes.`)
+        setCopyMessage(t("detail.copyMessage.allExist", { count: String(skipped) }))
       } else {
-        const parts = [`Se agregaron ${created} concepto${created === 1 ? "" : "s"}.`]
-        if (skipped > 0) parts.push(`${skipped} ya existían.`)
+        const parts = [t("detail.copyMessage.added", { created: String(created) })]
+        if (skipped > 0) parts.push(t("detail.copyMessage.skipped", { count: String(skipped) }))
         setCopyMessage(parts.join(" "))
       }
     } catch (err) {
-      setCopyMessage(err instanceof Error ? err.message : "Error al copiar.")
+      setCopyMessage(err instanceof Error ? err.message : t("detail.addModal.errorGeneric"))
     } finally {
       setCopyLoading(false)
     }
@@ -243,14 +238,15 @@ export function MonthlyDetailView({
       <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-lg">
         <div className="flex items-center justify-between px-5 pb-3 pt-safe-top">
           <div className="pt-4">
-            <p className="text-sm text-muted-foreground">Detalle mensual</p>
+            <p className="text-sm text-muted-foreground">{t("detail.title")}</p>
           </div>
           <div className="flex items-center gap-1 pt-4">
             <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full" onClick={toggleTheme}>
               <Sun className="h-5 w-5 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
               <Moon className="absolute h-5 w-5 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-              <span className="sr-only">Cambiar tema</span>
+              <span className="sr-only">{t("common.toggleTheme")}</span>
             </Button>
+            <LanguageSwitcher />
             <UserMenu />
           </div>
         </div>
@@ -258,14 +254,14 @@ export function MonthlyDetailView({
         <div className="flex items-center justify-center gap-4 px-5 pb-4">
           <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full" onClick={goToPreviousMonth}>
             <ChevronLeft className="h-5 w-5" />
-            <span className="sr-only">Mes anterior</span>
+            <span className="sr-only">{t("detail.previousMonth")}</span>
           </Button>
-          <h1 className="min-w-[160px] text-center text-xl font-semibold text-foreground">
-            {MONTH_NAMES[currentMonth - 1]} {currentYear}
+          <h1 className="min-w-[160px] text-center text-xl font-semibold text-foreground font-display tracking-[-0.01em]">
+            {getMonthName(locale, currentMonth)} {currentYear}
           </h1>
           <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full" onClick={goToNextMonth}>
             <ChevronRight className="h-5 w-5" />
-            <span className="sr-only">Mes siguiente</span>
+            <span className="sr-only">{t("detail.nextMonth")}</span>
           </Button>
         </div>
       </header>
@@ -275,7 +271,7 @@ export function MonthlyDetailView({
           <div className="rounded-2xl border border-border bg-card p-4">
             <div className="mb-3 flex items-center justify-between">
               <label htmlFor="income" className="text-sm font-medium text-muted-foreground">
-                Cobré este mes
+                {t("detail.incomeLabel")}
               </label>
               <Button
                 variant="ghost"
@@ -284,7 +280,7 @@ export function MonthlyDetailView({
                 onClick={() => setIsEditingIncome(!isEditingIncome)}
               >
                 <Pencil className="h-4 w-4 text-muted-foreground" />
-                <span className="sr-only">Editar ingreso</span>
+                <span className="sr-only">{t("detail.editIncome")}</span>
               </Button>
             </div>
             <div className="flex items-baseline gap-2">
@@ -314,7 +310,7 @@ export function MonthlyDetailView({
                   className="cursor-pointer text-2xl font-bold text-card-foreground"
                   onClick={() => setIsEditingIncome(true)}
                 >
-                  {income === "" ? "—" : formatCurrency(Number.parseFloat(income.replace(/\./g, "").replace(",", ".")) || 0)}
+                  {income === "" ? "—" : formatCurrency(Number.parseFloat(income.replace(/\./g, "").replace(",", ".")) || 0, locale)}
                 </span>
               )}
               {incomeSaving && <span className="text-xs text-muted-foreground">Guardando…</span>}
@@ -325,7 +321,7 @@ export function MonthlyDetailView({
 
         <section className="mb-6 flex-1">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-sm font-medium text-muted-foreground">Gastos del mes</h2>
+            <h2 className="text-sm font-medium text-muted-foreground">{t("detail.expensesOfMonth")}</h2>
             <div className="flex items-center gap-1">
               <Button
                 variant="ghost"
@@ -335,7 +331,7 @@ export function MonthlyDetailView({
                 disabled={copyLoading}
               >
                 <Copy className="h-3.5 w-3.5" />
-                Copiar mes anterior
+                {t("detail.copyPrevious")}
               </Button>
               <Button
                 variant="ghost"
@@ -344,7 +340,7 @@ export function MonthlyDetailView({
                 onClick={openAddModal}
               >
                 <Plus className="h-3.5 w-3.5" />
-                Agregar
+                {t("detail.add")}
               </Button>
             </div>
           </div>
@@ -354,16 +350,16 @@ export function MonthlyDetailView({
 
           <div className="overflow-hidden rounded-2xl border border-border bg-card">
             <div className="grid grid-cols-[1fr_auto_auto_auto] gap-2 border-b border-border bg-muted/50 px-4 py-2.5 text-xs font-medium text-muted-foreground">
-              <span>Concepto</span>
-              <span className="w-20 text-center">Vence</span>
-              <span className="w-24 text-right">Importe</span>
+              <span>{t("detail.concept")}</span>
+              <span className="w-20 text-center">{t("detail.due")}</span>
+              <span className="w-24 text-right">{t("detail.amount")}</span>
               <span className="w-10 text-center" />
             </div>
             <div className="divide-y divide-border">
               {loading ? (
-                <div className="px-4 py-8 text-center text-sm text-muted-foreground">Cargando...</div>
+                <div className="px-4 py-8 text-center text-sm text-muted-foreground">{t("common.loading")}</div>
               ) : bills.length === 0 ? (
-                <div className="px-4 py-8 text-center text-sm text-muted-foreground">Sin gastos este mes</div>
+                <div className="px-4 py-8 text-center text-sm text-muted-foreground">{t("detail.noBills")}</div>
               ) : (
                 bills.map((bill) => (
                   <button
@@ -373,9 +369,9 @@ export function MonthlyDetailView({
                     onClick={() => onSelectBill(bill)}
                   >
                     <span className="min-w-0 line-clamp-2 wrap-break-word text-sm font-medium text-card-foreground">{bill.serviceName}</span>
-                    <span className="w-20 shrink-0 text-center text-sm text-muted-foreground tabular-nums">{formatLocaleDate(bill.dueDate)}</span>
+                    <span className="w-20 shrink-0 text-center text-sm text-muted-foreground tabular-nums">{formatLocaleDate(bill.dueDate, locale)}</span>
                     <span className="w-24 shrink-0 text-right text-sm font-medium tabular-nums text-card-foreground">
-                      ${formatCurrency(bill.amount)}
+                      ${formatCurrency(bill.amount, locale)}
                     </span>
                     <span className="flex w-10 shrink-0 items-center justify-center">
                       {bill.status === "paid" ? (
@@ -397,9 +393,9 @@ export function MonthlyDetailView({
 
         <section className="space-y-3">
           <div className="flex items-center justify-between rounded-xl border border-border bg-card px-4 py-3">
-            <span className="text-sm font-medium text-muted-foreground">Total de gastos</span>
+            <span className="text-sm font-medium text-muted-foreground">{t("detail.totalExpenses")}</span>
             <span className="text-base font-semibold tabular-nums text-card-foreground">
-              ${formatCurrency(totalExpenses)}
+              ${formatCurrency(totalExpenses, locale)}
             </span>
           </div>
           <div
@@ -412,14 +408,22 @@ export function MonthlyDetailView({
                 balance >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"
               }`}
             >
-              {balance >= 0 ? "Saldo disponible" : "Saldo negativo"}
+              {balance >= 0 ? t("detail.balanceAvailable") : t("detail.balanceNegative")}
             </span>
             <span
               className={`text-xl font-bold tabular-nums ${
                 balance >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"
               }`}
             >
-              ${formatCurrency(Math.abs(balance))}
+              ${formatCurrency(Math.abs(balance), locale)}
+            </span>
+          </div>
+          <div className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900 dark:bg-amber-950/40">
+            <span className="text-sm font-medium text-amber-800 dark:text-amber-300">
+              {t("detail.totalPending")}
+            </span>
+            <span className="text-base font-semibold tabular-nums text-amber-800 dark:text-amber-300">
+              ${formatCurrency(totalPending, locale)}
             </span>
           </div>
         </section>
@@ -428,24 +432,24 @@ export function MonthlyDetailView({
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-4 shadow-lg">
-            <h3 className="mb-4 text-lg font-semibold text-foreground">Nuevo gasto</h3>
+            <h3 className="mb-4 text-lg font-semibold text-foreground">{t("detail.addModal.title")}</h3>
             <form onSubmit={handleAddSubmit} className="space-y-4">
               <div>
                 <label htmlFor="add-concepto" className="mb-1 block text-sm font-medium text-muted-foreground">
-                  Concepto
+                  {t("detail.addModal.conceptLabel")}
                 </label>
                 <Input
                   id="add-concepto"
                   value={addConcepto}
                   onChange={(e) => setAddConcepto(e.target.value)}
-                  placeholder="Ej. Alquiler, Luz..."
+                  placeholder={t("detail.addModal.conceptPlaceholder")}
                   className="bg-background"
                   autoFocus
                 />
               </div>
               <div>
                 <label htmlFor="add-due" className="mb-1 block text-sm font-medium text-muted-foreground">
-                  Vence
+                  {t("detail.addModal.dueLabel")}
                 </label>
                 <Input
                   id="add-due"
@@ -457,7 +461,7 @@ export function MonthlyDetailView({
               </div>
               <div>
                 <label htmlFor="add-amount" className="mb-1 block text-sm font-medium text-muted-foreground">
-                  Importe ($)
+                  {t("detail.addModal.amountLabel")}
                 </label>
                 <Input
                   id="add-amount"
@@ -465,7 +469,7 @@ export function MonthlyDetailView({
                   inputMode="decimal"
                   value={addAmount}
                   onChange={(e) => setAddAmount(e.target.value)}
-                  placeholder="0"
+                  placeholder={t("detail.addModal.amountPlaceholder")}
                   className="bg-background"
                 />
               </div>
@@ -480,10 +484,10 @@ export function MonthlyDetailView({
                   onClick={() => setShowAddModal(false)}
                   disabled={addSaving}
                 >
-                  Cancelar
+                  {t("detail.addModal.cancel")}
                 </Button>
                 <Button type="submit" className="flex-1" disabled={addSaving}>
-                  {addSaving ? "Guardando…" : "Guardar"}
+                  {addSaving ? t("detail.addModal.saving") : t("detail.addModal.save")}
                 </Button>
               </div>
             </form>

@@ -123,6 +123,9 @@ export function HomeScreen({ onSelectBill }: HomeScreenProps) {
 
   const expenses = mockExpenses
   const totalExpenses = expenses.reduce((acc, exp) => acc + exp.amount, 0)
+  const totalPending = expenses
+    .filter((exp) => exp.status === "pending")
+    .reduce((acc, exp) => acc + exp.amount, 0)
   const incomeValue = Number.parseFloat(income.replace(/\./g, "").replace(",", ".")) || 0
   const remaining = incomeValue - totalExpenses
 
@@ -203,7 +206,7 @@ export function HomeScreen({ onSelectBill }: HomeScreenProps) {
             <ChevronLeft className="h-5 w-5" />
             <span className="sr-only">Mes anterior</span>
           </Button>
-          <h1 className="min-w-[160px] text-center text-xl font-semibold text-foreground">
+          <h1 className="min-w-[160px] text-center text-xl font-semibold text-foreground font-display tracking-[-0.01em]">
             {months[currentMonth]} {currentYear}
           </h1>
           <Button
@@ -364,6 +367,16 @@ export function HomeScreen({ onSelectBill }: HomeScreenProps) {
               }`}
             >
               ${formatCurrency(Math.abs(remaining))}
+            </span>
+          </div>
+
+          {/* Total pending amount */}
+          <div className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900 dark:bg-amber-950/40">
+            <span className="text-sm font-medium text-amber-800 dark:text-amber-300">
+              Total pendiente de pago
+            </span>
+            <span className="text-base font-semibold tabular-nums text-amber-800 dark:text-amber-300">
+              ${formatCurrency(totalPending)}
             </span>
           </div>
         </section>

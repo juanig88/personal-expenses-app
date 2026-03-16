@@ -3,17 +3,23 @@
 import { Button } from "@/components/ui/button"
 import { Wallet } from "lucide-react"
 import { signIn } from "next-auth/react"
+import { useLocale } from "@/lib/i18n/context"
+import { LanguageSwitcher } from "@/components/language-switcher"
 
 export function LoginScreen() {
+  const { t } = useLocale()
+
   const handleLogin = () => {
     signIn("google", { callbackUrl: "/" })
   }
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      {/* Status bar spacer for native app feel */}
       <div className="h-safe-top" />
-      
+      <div className="absolute right-4 top-4 pt-safe-top">
+        <LanguageSwitcher />
+      </div>
+
       <div className="flex flex-1 flex-col items-center justify-center px-6 pb-12">
         {/* Logo and branding */}
         <div className="mb-12 flex flex-col items-center">
@@ -21,10 +27,10 @@ export function LoginScreen() {
             <Wallet className="h-10 w-10 text-primary-foreground" />
           </div>
           <h1 className="text-3xl font-semibold tracking-tight text-foreground">
-            Gastos
+            {t("login.title")}
           </h1>
           <p className="mt-2 text-center text-muted-foreground">
-            Organizá tus gastos del mes
+            {t("login.subtitle")}
           </p>
         </div>
 
@@ -36,13 +42,14 @@ export function LoginScreen() {
             className="h-14 w-full gap-3 rounded-2xl border-border bg-card text-base font-medium shadow-sm transition-all active:scale-[0.98]"
           >
             <GoogleIcon className="h-5 w-5" />
-            Continuar con Google
+            {t("login.continueGoogle")}
           </Button>
 
           <p className="text-center text-xs text-muted-foreground">
-            Al continuar, aceptás los{" "}
-            <span className="underline">Términos de uso</span> y la{" "}
-            <span className="underline">Política de privacidad</span>
+            {t("login.termsDisclaimer", {
+              terms: t("login.terms"),
+              privacy: t("login.privacy"),
+            })}
           </p>
         </div>
       </div>

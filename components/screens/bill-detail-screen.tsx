@@ -17,6 +17,8 @@ import {
 } from "lucide-react"
 import { updateBill, deleteBill } from "@/services/billingService"
 import { formatLocaleDate } from "@/lib/date"
+import { useLocale } from "@/lib/i18n/context"
+import { formatCurrency as formatCurrencyI18n } from "@/lib/i18n/format"
 
 interface BillDetailScreenProps {
   bill: Bill
@@ -25,45 +27,38 @@ interface BillDetailScreenProps {
   onBillUpdated?: () => void | Promise<void>
 }
 
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("es-AR", {
-    style: "decimal",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(amount)
-}
-
 const statusConfig = {
   pending: {
-    label: "Pendiente",
+    labelKey: "billDetail.statusPending" as const,
     icon: Clock,
     color: "text-amber-600 dark:text-amber-400",
     bg: "bg-amber-50 dark:bg-amber-950/50",
   },
   paid: {
-    label: "Pagado",
+    labelKey: "billDetail.statusPaid" as const,
     icon: Check,
     color: "text-emerald-600 dark:text-emerald-400",
     bg: "bg-emerald-50 dark:bg-emerald-950/50",
   },
   overdue: {
-    label: "Vencido",
+    labelKey: "billDetail.statusOverdue" as const,
     icon: AlertCircle,
     color: "text-red-600 dark:text-red-400",
     bg: "bg-red-50 dark:bg-red-950/50",
   },
 }
 
-const typeLabels: Record<string, string> = {
-  gas: "Servicio de gas",
-  electricity: "Servicio eléctrico",
-  internet: "Internet / Cable",
-  water: "Servicio de agua",
-  rent: "Alquiler",
-  other: "Otro gasto",
+const typeLabelKeys: Record<string, string> = {
+  gas: "billDetail.typeGas",
+  electricity: "billDetail.typeElectricity",
+  internet: "billDetail.typeInternet",
+  water: "billDetail.typeWater",
+  rent: "billDetail.typeRent",
+  other: "billDetail.typeOther",
 }
 
 export function BillDetailScreen({ bill, onBack, onBillUpdated }: BillDetailScreenProps) {
+  const { t, locale } = useLocale()
   const [currentBill, setCurrentBill] = useState(bill)
   const [isEditing, setIsEditing] = useState(false)
   const [editAmount, setEditAmount] = useState(bill.amount.toString())
@@ -74,8 +69,9 @@ export function BillDetailScreen({ bill, onBack, onBillUpdated }: BillDetailScre
 
   const status = statusConfig[currentBill.status]
   const StatusIcon = status.icon
+  const statusLabel = t(status.labelKey)
   const currency = currentBill.currency || "ARS"
-  const description = typeLabels[currentBill.type] || "Gasto"
+  const description = t(typeLabelKeys[currentBill.type] ?? "billDetail.typeOther")
 
   const handleMarkAsPaid = async () => {
     const newStatus = currentBill.status === "paid" ? "pending" : "paid"
@@ -139,7 +135,7 @@ export function BillDetailScreen({ bill, onBack, onBillUpdated }: BillDetailScre
   }
 
   const handleDelete = async () => {
-    if (!confirm("¿Eliminar este gasto? No se puede deshacer.")) return
+    if (!confirm(t("billDetail.deleteConfirm"))) return
     setDeleting(true)
     try {
       await deleteBill(currentBill.id)
@@ -164,10 +160,10 @@ export function BillDetailScreen({ bill, onBack, onBillUpdated }: BillDetailScre
             onClick={onBack}
           >
             <ArrowLeft className="h-5 w-5" />
-            <span className="sr-only">Volver</span>
+            <span className="sr-only">{t("billDetail.back")}</span>
           </Button>
           <h1 className="flex-1 text-base font-semibold text-foreground">
-            Detalle del gasto
+            {t("billDetail.title")}
           </h1>
         </div>
       </header>
@@ -178,7 +174,7 @@ export function BillDetailScreen({ bill, onBack, onBillUpdated }: BillDetailScre
         <div className="divide-y divide-border border-b border-border">
           {/* Service name */}
           <div className="flex items-center justify-between px-4 py-4">
-            <span className="text-sm text-muted-foreground">Servicio</span>
+            <span className="text-sm text-muted-foreground">{t("billDetail.service")}</span>
             <span className="font-medium text-foreground">
               {currentBill.serviceName}
             </span>
@@ -186,13 +182,13 @@ export function BillDetailScreen({ bill, onBack, onBillUpdated }: BillDetailScre
 
           {/* Description */}
           <div className="flex items-center justify-between px-4 py-4">
-            <span className="text-sm text-muted-foreground">Descripción</span>
+            <span className="text-sm text-muted-foreground">{t("billDetail.description")}</span>
             <span className="text-sm text-foreground">{description}</span>
           </div>
 
           {/* Amount */}
           <div className="flex items-center justify-between px-4 py-4">
-            <span className="text-sm text-muted-foreground">Monto</span>
+            <span className="text-sm text-muted-foreground">{t("billDetail.amount")}</span>
             {isEditing ? (
               <div className="flex items-center gap-2">
                 <span className="text-sm text-muted-foreground">$</span>
@@ -226,7 +222,7 @@ export function BillDetailScreen({ bill, onBack, onBillUpdated }: BillDetailScre
               </div>
             ) : (
               <span className="text-lg font-semibold tabular-nums text-foreground">
-                ${formatCurrency(currentBill.amount)}{" "}
+                ${formatCurrencyI18n(currentBill.amount, locale)}{" "}
                 <span className="text-xs font-normal text-muted-foreground">
                   {currency}
                 </span>
@@ -236,7 +232,7 @@ export function BillDetailScreen({ bill, onBack, onBillUpdated }: BillDetailScre
 
           {/* Due date */}
           <div className="flex items-center justify-between px-4 py-4">
-            <span className="text-sm text-muted-foreground">Vence el</span>
+            <span className="text-sm text-muted-foreground">{t("billDetail.dueDate")}</span>
             {isEditingDueDate ? (
               <div className="flex items-center gap-2">
                 <Input
@@ -267,28 +263,28 @@ export function BillDetailScreen({ bill, onBack, onBillUpdated }: BillDetailScre
               </div>
             ) : (
               <span className="font-medium tabular-nums text-foreground">
-                {formatLocaleDate(currentBill.dueDate)}
+                {formatLocaleDate(currentBill.dueDate, locale)}
               </span>
             )}
           </div>
 
           {/* Status */}
           <div className="flex items-center justify-between px-4 py-4">
-            <span className="text-sm text-muted-foreground">Estado</span>
+            <span className="text-sm text-muted-foreground">{t("billDetail.status")}</span>
             <div
               className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-sm font-medium ${status.bg} ${status.color}`}
             >
               <StatusIcon className="h-3.5 w-3.5" />
-              {status.label}
+              {statusLabel}
             </div>
           </div>
 
           {/* Source */}
           <div className="flex items-center justify-between px-4 py-4">
-            <span className="text-sm text-muted-foreground">Origen</span>
+            <span className="text-sm text-muted-foreground">{t("billDetail.source")}</span>
             <div className="flex items-center gap-1.5 text-sm text-foreground">
               <Mail className="h-3.5 w-3.5 text-muted-foreground" />
-              Detectado desde tu email
+              {t("billDetail.sourceFromEmail")}
             </div>
           </div>
         </div>
@@ -303,8 +299,8 @@ export function BillDetailScreen({ bill, onBack, onBillUpdated }: BillDetailScre
           >
             <Check className="h-4 w-4" />
             {currentBill.status === "paid"
-              ? "Marcar como pendiente"
-              : "Marcar como pagado"}
+              ? t("billDetail.markPending")
+              : t("billDetail.markPaid")}
           </Button>
 
           <Button
@@ -317,7 +313,7 @@ export function BillDetailScreen({ bill, onBack, onBillUpdated }: BillDetailScre
             disabled={isEditing || isEditingDueDate || saving || deleting}
           >
             <PenLine className="h-4 w-4" />
-            Editar monto
+            {t("billDetail.editAmount")}
           </Button>
 
           <Button
@@ -330,7 +326,7 @@ export function BillDetailScreen({ bill, onBack, onBillUpdated }: BillDetailScre
             disabled={isEditing || isEditingDueDate || saving || deleting}
           >
             <PenLine className="h-4 w-4" />
-            Editar fecha de vencimiento
+            {t("billDetail.editDueDate")}
           </Button>
 
           <Button
@@ -340,7 +336,7 @@ export function BillDetailScreen({ bill, onBack, onBillUpdated }: BillDetailScre
             disabled={saving || deleting}
           >
             <Trash2 className="h-4 w-4" />
-            {deleting ? "Eliminando…" : "Eliminar"}
+            {deleting ? t("billDetail.deleting") : t("billDetail.delete")}
           </Button>
         </div>
       </main>

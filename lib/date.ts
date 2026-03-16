@@ -7,11 +7,17 @@ export function parseLocalDate(dateString: string): Date {
   return new Date(y ?? 0, ((m ?? 1) - 1), d ?? 1)
 }
 
+const localeToBcp47: Record<string, string> = {
+  es: "es-AR",
+  en: "en-US",
+}
+
 /**
- * Format a YYYY-MM-DD date string for display in es-AR (e.g. 01/02/2026).
+ * Format a YYYY-MM-DD date string for display (locale-aware).
  */
-export function formatLocaleDate(dateString: string): string {
-  return parseLocalDate(dateString).toLocaleDateString("es-AR", {
+export function formatLocaleDate(dateString: string, locale?: "es" | "en"): string {
+  const bcp47 = locale ? localeToBcp47[locale] ?? "es-AR" : "es-AR"
+  return parseLocalDate(dateString).toLocaleDateString(bcp47, {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
