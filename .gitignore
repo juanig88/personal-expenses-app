@@ -45,3 +45,9 @@ sync-debug-*.json
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local images (not for repo)
+/img.ignore/
+
+# source images (keep public/brand versioned)
+/img/

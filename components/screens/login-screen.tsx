@@ -1,10 +1,10 @@
 "use client"
 
 import { Button } from "@/components/ui/button"
-import { Wallet } from "lucide-react"
 import { signIn } from "next-auth/react"
 import { useLocale } from "@/lib/i18n/context"
 import { LanguageSwitcher } from "@/components/language-switcher"
+import Image from "next/image"
 
 export function LoginScreen() {
   const { t } = useLocale()
@@ -23,8 +23,15 @@ export function LoginScreen() {
       <div className="flex flex-1 flex-col items-center justify-center px-6 pb-12">
         {/* Logo and branding */}
         <div className="mb-12 flex flex-col items-center">
-          <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-3xl bg-primary">
-            <Wallet className="h-10 w-10 text-primary-foreground" />
+          <div className="mb-6 flex h-24 w-24 items-center justify-center rounded-[28px] bg-transparent">
+            <Image
+              src="/brand/pea.png"
+              alt={t("common.appHeaderTitle")}
+              width={88}
+              height={88}
+              className="h-[88px] w-[88px]"
+              priority
+            />
           </div>
           <h1 className="text-3xl font-semibold tracking-tight text-foreground">
             {t("login.title")}

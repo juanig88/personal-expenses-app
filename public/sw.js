@@ -10,8 +10,8 @@ self.addEventListener("push", function (event) {
   const title = payload.title || "Gastos"
   const options = {
     body: payload.body || "",
-    icon: "/icon-192x192.png",
-    badge: "/icon-192x192.png",
+    icon: "/brand/pea.png",
+    badge: "/brand/pea.png",
     tag: "due-reminder",
     renotify: true,
   }

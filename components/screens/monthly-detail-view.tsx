@@ -24,6 +24,7 @@ import { formatLocaleDate } from "@/lib/date"
 import { useLocale } from "@/lib/i18n/context"
 import { getMonthName } from "@/lib/i18n/translations"
 import { formatCurrency } from "@/lib/i18n/format"
+import Image from "next/image"
 
 interface MonthlyDetailViewProps {
   year: number
@@ -237,8 +238,21 @@ export function MonthlyDetailView({
     <div className="flex min-h-screen flex-col bg-background">
       <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-lg">
         <div className="flex items-center justify-between px-5 pb-3 pt-safe-top">
-          <div className="pt-4">
-            <p className="text-sm text-muted-foreground">{t("detail.title")}</p>
+          <div className="flex items-center gap-3 pt-4">
+            <Image
+              src="/brand/pea.png"
+              alt={t("common.appHeaderTitle")}
+              width={36}
+              height={36}
+              className="h-9 w-9"
+              priority={false}
+            />
+            <div className="leading-tight">
+              <div className="text-sm font-semibold text-foreground">
+                {t("common.appHeaderTitle")}
+              </div>
+              <p className="text-xs text-muted-foreground">{t("detail.title")}</p>
+            </div>
           </div>
           <div className="flex items-center gap-1 pt-4">
             <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full" onClick={toggleTheme}>

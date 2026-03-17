@@ -12,6 +12,7 @@ export const translations = {
       toggleTheme: "Cambiar tema",
       user: "Usuario",
       userMenu: "Menú de usuario",
+      appHeaderTitle: "Personal Expenses App",
     },
     login: {
       title: "Gastos",
@@ -189,6 +190,7 @@ export const translations = {
       toggleTheme: "Toggle theme",
       user: "User",
       userMenu: "User menu",
+      appHeaderTitle: "Personal Expenses App",
     },
     login: {
       title: "Expenses",
